@@ -1,0 +1,2557 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🚦 KẸT XE BINGO - GDG DevFest Demo</title>
+  <meta name="description" content="Trò chơi Bingo kẹt xe vui nhộn, bản đồ báo kẹt cộng đồng và gợi ý giờ xuất phát thông minh cho đường phố Việt Nam.">
+
+  <!-- Google Fonts: Be Vietnam Pro -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS for OpenStreetMap -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <!-- Firebase Compat CDN (Firestore realtime sync) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* =========================================================
+       CSS VARIABLES & RESET
+       ========================================================= */
+    :root {
+      --bg-main: #0B0F17;
+      --bg-card: #151D2A;
+      --bg-card-hover: #1C2638;
+      --border-color: #27354A;
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      
+      /* Traffic Light Colors */
+      --red: #EF4444;
+      --red-glow: rgba(239, 68, 68, 0.4);
+      --yellow: #F59E0B;
+      --yellow-glow: rgba(245, 158, 11, 0.4);
+      --green: #10B981;
+      --green-glow: rgba(16, 185, 129, 0.4);
+      --blue: #3B82F6;
+      --purple: #8B5CF6;
+      
+      --font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    /* =========================================================
+       HEADER & ANIMATIONS
+       ========================================================= */
+    .app-header {
+      background: linear-gradient(180deg, #131A26 0%, #0B0F17 100%);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 16px 8px;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .logo-badge-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .traffic-lights {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      background: #000000;
+      padding: 4px 5px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+
+    .light {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      opacity: 0.3;
+      transition: all 0.3s ease;
+    }
+    .light.red { background: var(--red); }
+    .light.yellow { background: var(--yellow); }
+    .light.green { background: var(--green); }
+
+    .light.active.red {
+      opacity: 1;
+      box-shadow: 0 0 8px var(--red);
+    }
+    .light.active.yellow {
+      opacity: 1;
+      box-shadow: 0 0 8px var(--yellow);
+    }
+    .light.active.green {
+      opacity: 1;
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .app-title-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .app-title {
+      font-size: 1.25rem;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #FFFFFF;
+    }
+
+    .devfest-tag {
+      font-size: 0.65rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #EA4335, #FBBC05, #34A853, #4285F4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Motorbike road animation */
+    .road-track {
+      position: relative;
+      height: 18px;
+      max-width: 680px;
+      margin: 6px auto 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.15);
+      overflow: hidden;
+    }
+
+    .animated-bike {
+      position: absolute;
+      bottom: 1px;
+      font-size: 13px;
+      animation: driveBike 12s linear infinite;
+      white-space: nowrap;
+      will-change: transform;
+    }
+
+    @keyframes driveBike {
+      0% { transform: translateX(-50px); }
+      100% { transform: translateX(720px); }
+    }
+
+    /* =========================================================
+       MAIN CONTENT CONTAINER
+       ========================================================= */
+    .main-container {
+      flex: 1;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 12px 14px 84px; /* bottom space for nav */
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      animation: fadeIn 0.25s ease-out;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* =========================================================
+       FEATURE 1: BINGO TAB
+       ========================================================= */
+    .bingo-stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 10px 14px;
+    }
+
+    .stat-box {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-value.highlight-red { color: var(--red); }
+    .stat-value.highlight-yellow { color: var(--yellow); }
+    .stat-value.highlight-green { color: var(--green); }
+
+    /* Bingo Grid 5x5 */
+    .bingo-grid-wrapper {
+      position: relative;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .bingo-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+    }
+
+    .bingo-cell {
+      background: #182234;
+      border: 1px solid #2B3A50;
+      border-radius: 10px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 0.68rem;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #CBD5E1;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+    }
+
+    @media (min-width: 480px) {
+      .bingo-cell {
+        font-size: 0.75rem;
+        padding: 6px;
+      }
+    }
+
+    .bingo-cell:hover {
+      background: var(--bg-card-hover);
+      border-color: #3B82F6;
+      transform: translateY(-1px);
+    }
+
+    .bingo-cell:active {
+      transform: scale(0.96);
+    }
+
+    /* Stamped Cell */
+    .bingo-cell.stamped {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%);
+      border-color: var(--yellow);
+      color: #FFFFFF;
+    }
+
+    .bingo-cell.stamped::after {
+      content: "ĐÃ GẶP";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-18deg);
+      border: 2px solid rgba(239, 68, 68, 0.85);
+      color: #EF4444;
+      font-size: 0.62rem;
+      font-weight: 900;
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: rgba(11, 15, 23, 0.75);
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      animation: stampIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* Center Free Cell */
+    .bingo-cell.free-cell {
+      background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+      color: #FFFFFF;
+      font-weight: 800;
+      border-color: #F87171;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+    }
+
+    .bingo-cell.free-cell::after {
+      content: "★ FREE ★";
+      border-color: #FDE047;
+      color: #FDE047;
+      background: rgba(0,0,0,0.5);
+    }
+
+    /* Winning line glow */
+    .bingo-cell.in-line {
+      animation: pulseGlow 2s infinite alternate;
+      border-color: #10B981 !important;
+    }
+
+    @keyframes pulseGlow {
+      from { box-shadow: 0 0 4px rgba(16, 185, 129, 0.3); }
+      to { box-shadow: 0 0 12px rgba(16, 185, 129, 0.8); }
+    }
+
+    @keyframes stampIn {
+      0% { transform: translate(-50%, -50%) rotate(0deg) scale(2); opacity: 0; }
+      100% { transform: translate(-50%, -50%) rotate(-18deg) scale(1); opacity: 1; }
+    }
+
+    /* Bingo Action Buttons */
+    .bingo-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-family: var(--font-family);
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 11px 16px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-secondary {
+      background: #1E293B;
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: #283548;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-accent {
+      background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%);
+      color: #FFFFFF;
+    }
+
+    /* Bingo Banner Notice */
+    .bingo-banner {
+      display: none;
+      background: linear-gradient(135deg, #065F46 0%, #047857 100%);
+      border: 1px solid #34D399;
+      border-radius: 14px;
+      padding: 12px 16px;
+      align-items: center;
+      justify-content: space-between;
+      animation: popBanner 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .bingo-banner.show {
+      display: flex;
+    }
+
+    @keyframes popBanner {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    /* =========================================================
+       FEATURE 2: MAP TAB
+       ========================================================= */
+    .map-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #182234;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    .map-wrapper {
+      position: relative;
+      height: 380px;
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      background: #121824;
+    }
+
+    #map-container {
+      height: 100%;
+      width: 100%;
+      background: #0d121d;
+    }
+
+    .map-overlay-tip {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(11, 15, 23, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #E2E8F0;
+      border: 1px solid var(--border-color);
+      z-index: 500;
+      pointer-events: none;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Marker Pulse Styles */
+    .custom-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .marker-pin {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      border: 2px solid #FFFFFF;
+      transition: transform 0.2s ease;
+      cursor: pointer;
+    }
+
+    .marker-pin:hover {
+      transform: scale(1.18);
+    }
+
+    .marker-ripple {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      animation: ripple 2s infinite ease-out;
+      pointer-events: none;
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    /* Recent Reports Section */
+    .recent-reports-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .section-title {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: #CBD5E1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .reports-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .reports-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .reports-list::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    .report-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      transition: background 0.15s ease;
+      cursor: pointer;
+    }
+    .report-card:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .report-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .report-badge-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .type-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .type-badge.jam_heavy { background: rgba(239, 68, 68, 0.2); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .type-badge.jam_medium { background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .type-badge.flood { background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .type-badge.accident { background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); }
+    .type-badge.construction { background: rgba(234, 179, 8, 0.2); color: #FACC15; border: 1px solid rgba(234, 179, 8, 0.4); }
+
+    .report-time-ago {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
+
+    .report-title-text {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .report-note-text {
+      font-size: 0.72rem;
+      color: #94A3B8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-upvote {
+      background: #1E293B;
+      border: 1px solid #334155;
+      color: #F8FAFC;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+    .btn-upvote:hover {
+      background: #29384E;
+      border-color: #3B82F6;
+    }
+    .btn-upvote:active {
+      transform: scale(0.92);
+    }
+
+    /* Leaflet popup customization */
+    .leaflet-popup-content-wrapper {
+      background: #151D2A !important;
+      color: #F1F5F9 !important;
+      border-radius: 12px !important;
+      border: 1px solid #27354A !important;
+      padding: 4px !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6) !important;
+    }
+    .leaflet-popup-tip {
+      background: #151D2A !important;
+      border: 1px solid #27354A !important;
+    }
+    .leaflet-popup-content {
+      margin: 8px 10px !important;
+      font-family: var(--font-family) !important;
+    }
+
+    /* =========================================================
+       FEATURE 3: DEPARTURE TIME TAB
+       ========================================================= */
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chart-title-wrap h3 {
+      font-size: 0.9rem;
+      font-weight: 800;
+      color: #FFFFFF;
+    }
+    .chart-title-wrap p {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .day-selector-group {
+      display: flex;
+      background: #0F172A;
+      border: 1px solid #27354A;
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .day-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-family);
+    }
+    .day-btn.active {
+      background: #3B82F6;
+      color: #FFFFFF;
+    }
+
+    /* Congestion Bar Chart SVG */
+    .chart-container {
+      width: 100%;
+      height: 140px;
+      position: relative;
+    }
+
+    .chart-legend {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-color-box {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    /* Calculator Form */
+    .calc-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .time-input, .select-input {
+      background: #0B0F17;
+      border: 1px solid var(--border-color);
+      color: #FFFFFF;
+      font-family: var(--font-family);
+      font-size: 0.95rem;
+      font-weight: 700;
+      padding: 10px 12px;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.2s ease;
+      width: 100%;
+    }
+
+    .time-input:focus, .select-input:focus {
+      border-color: #3B82F6;
+    }
+
+    /* Suggestion Output Card */
+    .result-card {
+      background: linear-gradient(135deg, #182436 0%, #111A27 100%);
+      border: 1px solid #334862;
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    .result-primary-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .result-depart-time {
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: var(--green);
+    }
+
+    .risk-badge {
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+    .risk-badge.red { background: rgba(239, 68, 68, 0.2); color: #EF4444; border: 1px solid var(--red); }
+    .risk-badge.yellow { background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid var(--yellow); }
+    .risk-badge.green { background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid var(--green); }
+
+    .result-quip {
+      background: rgba(15, 23, 42, 0.6);
+      border-left: 3px solid var(--yellow);
+      padding: 10px 12px;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.8rem;
+      color: #F8FAFC;
+      line-height: 1.4;
+      font-style: italic;
+    }
+
+    .result-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      text-align: center;
+      border-top: 1px solid #233145;
+      padding-top: 10px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+    .metric-val {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #FFFFFF;
+    }
+
+    /* =========================================================
+       BOTTOM NAVIGATION BAR
+       ========================================================= */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(11, 15, 23, 0.95);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: center;
+      z-index: 1000;
+      padding: 6px 12px 10px;
+    }
+
+    .nav-inner {
+      display: flex;
+      width: 100%;
+      max-width: 680px;
+      justify-content: space-around;
+      gap: 8px;
+    }
+
+    .nav-item {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-family);
+      font-size: 0.72rem;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+    }
+
+    .nav-item .nav-icon {
+      font-size: 1.25rem;
+      transition: transform 0.2s ease;
+    }
+
+    .nav-item.active {
+      color: #FFFFFF;
+      background: rgba(59, 130, 246, 0.12);
+    }
+    .nav-item.active .nav-icon {
+      transform: translateY(-2px);
+    }
+
+    /* =========================================================
+       MODAL & TOAST
+       ========================================================= */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: fadeIn 0.2s ease-out;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-sheet {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      max-width: 440px;
+      width: 100%;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.6);
+      animation: scaleUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes scaleUp {
+      from { transform: scale(0.92); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .report-type-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .type-radio-btn {
+      background: #0F172A;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #E2E8F0;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .type-radio-btn.selected {
+      border-color: #3B82F6;
+      background: rgba(59, 130, 246, 0.2);
+    }
+
+    .text-input {
+      background: #0B0F17;
+      border: 1px solid var(--border-color);
+      color: #FFFFFF;
+      font-family: var(--font-family);
+      font-size: 0.85rem;
+      padding: 10px 12px;
+      border-radius: 10px;
+      width: 100%;
+      outline: none;
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast-pill {
+      background: #1E293B;
+      color: #FFFFFF;
+      border: 1px solid var(--border-color);
+      padding: 10px 18px;
+      border-radius: 30px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: toastIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes toastIn {
+      from { transform: translateY(-16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =========================================================
+       APP HEADER
+       ========================================================= -->
+  <header class="app-header">
+    <div class="header-top">
+      <div class="logo-badge-group">
+        <div class="traffic-lights" id="traffic-lights-widget">
+          <div class="light red active" id="light-red"></div>
+          <div class="light yellow" id="light-yellow"></div>
+          <div class="light green" id="light-green"></div>
+        </div>
+        <div class="app-title-wrap">
+          <div class="app-title">
+            <span>KẸT XE BINGO</span>
+            <span style="font-size: 1rem;">🚦</span>
+          </div>
+          <span class="devfest-tag">GDG DevFest 2026 Edition</span>
+        </div>
+      </div>
+
+      <div class="status-pill" id="live-indicator">
+        <div class="status-dot"></div>
+        <span id="live-status-text">Live: TP.HCM</span>
+      </div>
+    </div>
+
+    <!-- Animated Motorbike Ticker -->
+    <div class="road-track">
+      <div class="animated-bike">🛵💨 <i>Vượt lề né kẹt...</i></div>
+    </div>
+  </header>
+
+  <!-- =========================================================
+       MAIN CONTAINER & TABS
+       ========================================================= -->
+  <main class="main-container">
+
+    <!-- -----------------------------------------------------
+         TAB 1: BINGO
+         ----------------------------------------------------- -->
+    <section id="tab-bingo" class="tab-content active">
+      <!-- Top Stats Bar -->
+      <div class="bingo-stats-bar">
+        <div class="stat-box">
+          <span class="stat-label">Thời gian kẹt</span>
+          <span class="stat-value highlight-red" id="jam-timer">00:00:00</span>
+        </div>
+        <div class="stat-box" style="text-align: center;">
+          <span class="stat-label">Đã phát hiện</span>
+          <span class="stat-value highlight-yellow" id="tiles-count">1/25</span>
+        </div>
+        <div class="stat-box" style="text-align: right;">
+          <span class="stat-label">Số đường Bingo</span>
+          <span class="stat-value highlight-green" id="bingo-lines-count">0</span>
+        </div>
+      </div>
+
+      <!-- Winning Celebration Banner -->
+      <div class="bingo-banner" id="bingo-banner">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.5rem;">🎉</span>
+          <div>
+            <div style="font-weight: 900; font-size: 0.95rem; color: #FFFFFF;">BINGO KẸT XE THÀNH CÔNG!</div>
+            <div style="font-size: 0.72rem; color: #A7F3D0;">Chúc mừng bạn đã gom đủ đặc sản kẹt xe Sài Gòn!</div>
+          </div>
+        </div>
+        <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="shareBingoResult()">Khoe ngay</button>
+      </div>
+
+      <!-- 5x5 Grid Container -->
+      <div class="bingo-grid-wrapper">
+        <div class="bingo-grid" id="bingo-grid-container">
+          <!-- 25 Bingo Cells dynamically rendered here -->
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="bingo-actions">
+        <button class="btn btn-secondary" onclick="generateNewBoardPrompt()">
+          <span>🔄</span> Bảng mới
+        </button>
+        <button class="btn btn-primary" onclick="shareBingoResult()">
+          <span>📋</span> Khoe kết quả
+        </button>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------
+         TAB 2: BẢN ĐỒ BÁO KẸT
+         ----------------------------------------------------- -->
+    <section id="tab-map" class="tab-content">
+      <div class="map-header-bar">
+        <div class="map-legend">
+          <span class="legend-chip"><span style="color:#EF4444;">🔴</span> Kẹt cứng</span>
+          <span class="legend-chip"><span style="color:#F59E0B;">🟡</span> Đông</span>
+          <span class="legend-chip"><span style="color:#3B82F6;">🌊</span> Ngập</span>
+          <span class="legend-chip"><span style="color:#F97316;">⚠️</span> Tai nạn</span>
+        </div>
+        <button class="btn btn-accent" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openReportModalAtCenter()">
+          <span>➕</span> Báo điểm kẹt
+        </button>
+      </div>
+
+      <!-- Interactive Leaflet Map Wrapper -->
+      <div class="map-wrapper">
+        <div id="map-container"></div>
+        <div class="map-overlay-tip">
+          <span>👆 Chạm vào bản đồ để báo kẹt</span>
+        </div>
+      </div>
+
+      <!-- Recent Reports List -->
+      <div class="recent-reports-section">
+        <div class="section-title">
+          <span>📡 MỚI BÁO GẦN ĐÂY (<span id="reports-count-badge">0</span>)</span>
+          <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 500;">Tự hết hạn sau 60 phút</span>
+        </div>
+        <div class="reports-list" id="reports-list-container">
+          <!-- Dynamic report cards -->
+        </div>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------
+         TAB 3: GỢI Ý GIỜ ĐI
+         ----------------------------------------------------- -->
+    <section id="tab-timing" class="tab-content">
+      <!-- 24H Traffic Congestion Chart -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <h3>📊 MỨC ĐỘ KẸT THEO GIỜ</h3>
+            <p>Dữ liệu lịch sử kết hợp báo cáo cộng đồng trực tiếp</p>
+          </div>
+          <div class="day-selector-group">
+            <button class="day-btn active" id="btn-day-weekday" onclick="switchDayType('weekday')">Thứ 2 - 6</button>
+            <button class="day-btn" id="btn-day-weekend" onclick="switchDayType('weekend')">Cuối tuần</button>
+          </div>
+        </div>
+
+        <!-- SVG Congestion Bar Chart -->
+        <div class="chart-container" id="chart-svg-wrap">
+          <!-- Rendered via JavaScript -->
+        </div>
+
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-color-box" style="background:#10B981;"></div> Thoáng (&lt;40%)</div>
+          <div class="legend-item"><div class="legend-color-box" style="background:#F59E0B;"></div> Đông (40-70%)</div>
+          <div class="legend-item"><div class="legend-color-box" style="background:#EF4444;"></div> Cao điểm (&gt;70%)</div>
+        </div>
+      </div>
+
+      <!-- Departure Calculator Form -->
+      <div class="calc-card">
+        <div class="section-title">
+          <span>⏱️ TÍNH GIỜ KHỞI HÀNH THÔNG MINH</span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="target-arrival-time">Cần đến nơi lúc</label>
+            <input type="time" id="target-arrival-time" class="time-input" value="08:00" onchange="calculateDepartureRecommendation()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="trip-distance">Khoảng cách đi</label>
+            <select id="trip-distance" class="select-input" onchange="calculateDepartureRecommendation()">
+              <option value="short">Gần (~3 - 5 km)</option>
+              <option value="medium" selected>Trung bình (~6 - 10 km)</option>
+              <option value="long">Xa (&gt; 12 km)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Dynamic Output Result Card -->
+        <div class="result-card" id="departure-result-box">
+          <!-- Filled by calculateDepartureRecommendation() -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================
+       BOTTOM TAB NAVIGATION
+       ========================================================= -->
+  <nav class="bottom-nav">
+    <div class="nav-inner">
+      <button class="nav-item active" id="nav-btn-bingo" onclick="switchTab('bingo')">
+        <span class="nav-icon">🎯</span>
+        <span>Bingo</span>
+      </button>
+      <button class="nav-item" id="nav-btn-map" onclick="switchTab('map')">
+        <span class="nav-icon">🗺️</span>
+        <span>Bản đồ</span>
+      </button>
+      <button class="nav-item" id="nav-btn-timing" onclick="switchTab('timing')">
+        <span class="nav-icon">⏰</span>
+        <span>Giờ đi</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- =========================================================
+       REPORT MODAL (MAP TAB)
+       ========================================================= -->
+  <div class="modal-backdrop" id="report-modal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📢</span> Báo cáo kẹt xe
+        </div>
+        <button class="btn-close" onclick="closeReportModal()">&times;</button>
+      </div>
+
+      <div style="font-size: 0.75rem; color: var(--text-muted);" id="modal-location-text">
+        Vị trí đã chọn: Đang xác định...
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Loại tình trạng</label>
+        <div class="report-type-selector">
+          <div class="type-radio-btn selected" data-type="jam_heavy" onclick="selectReportType(this, 'jam_heavy')">
+            <span>🔴</span> Kẹt cứng
+          </div>
+          <div class="type-radio-btn" data-type="jam_medium" onclick="selectReportType(this, 'jam_medium')">
+            <span>🟡</span> Đông đúc
+          </div>
+          <div class="type-radio-btn" data-type="flood" onclick="selectReportType(this, 'flood')">
+            <span>🌊</span> Ngập nước
+          </div>
+          <div class="type-radio-btn" data-type="accident" onclick="selectReportType(this, 'accident')">
+            <span>⚠️</span> Tai nạn
+          </div>
+          <div class="type-radio-btn" data-type="construction" style="grid-column: span 2;" onclick="selectReportType(this, 'construction')">
+            <span>🚧</span> Công trình / Chắn đường
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="report-note-input">Ghi chú nhanh (tùy chọn)</label>
+        <input type="text" id="report-note-input" class="text-input" placeholder="Ví dụ: Kẹt dài hơn 500m, xe buýt chết máy..." maxlength="60">
+      </div>
+
+      <button class="btn btn-primary" onclick="submitTrafficReport()">
+        <span>🚀</span> Gửi báo cáo ngay
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- =========================================================
+       JAVASCRIPT LOGIC
+       ========================================================= -->
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <script>
+    // =========================================================
+    // CẤU HÌNH HỆ THỐNG / CONFIG
+    // =========================================================
+    // 1. Điền cấu hình Firebase Firestore để đồng bộ realtime nhiều thiết bị (tùy chọn).
+    // Nếu để null, ứng dụng tự động chạy chế độ DEMO lưu cục bộ (localStorage).
+    const FIREBASE_CONFIG = null;
+    /*
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyD-YourApiKeyHere",
+      authDomain: "your-app.firebaseapp.com",
+      projectId: "your-app-id",
+      storageBucket: "your-app.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+    */
+
+    // 2. Điền Google Maps API Key nếu muốn chuyển sang Google Maps JavaScript API (tùy chọn).
+    // Nếu để chuỗi rỗng "", ứng dụng sử dụng Leaflet + OpenStreetMap hoàn toàn miễn phí.
+    const GOOGLE_MAPS_API_KEY = "";
+
+    // =========================================================
+    // WEB AUDIO API SOUND GENERATOR
+    // =========================================================
+    let audioCtx = null;
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          audioCtx = new AudioContext();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // Sound effect for stamping a cell
+    function playStampSound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.12);
+
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.13);
+      } catch (e) {
+        // AudioContext silent fail fallback
+      }
+    }
+
+    // Victory celebratory chime for Bingo
+    function playBingoVictorySound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]; // C5, E5, G5, C6, E6
+        notes.forEach((freq, index) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.1);
+
+          gain.gain.setValueAtTime(0, ctx.currentTime + index * 0.1);
+          gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + index * 0.1 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.1 + 0.45);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(ctx.currentTime + index * 0.1);
+          osc.stop(ctx.currentTime + index * 0.1 + 0.5);
+        });
+      } catch (e) {}
+    }
+
+    // UI Click sound
+    function playClickSound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      } catch (e) {}
+    }
+
+    // =========================================================
+    // FEATURE 1: BINGO TRỰC QUAN
+    // =========================================================
+    const BINGO_SCENARIOS = [
+      "Xe ôm chở tủ lạnh / máy giặt",
+      "Ninja Lead xi nhan trái rẽ phải",
+      "Có người phóng xe leo lề",
+      "Tiếng bấm còi inh ỏi liên tục",
+      "Shipper luồn lách thót tim",
+      "Đèn đỏ 99 giây đứng hình",
+      "Xe buýt chiếm trọn 2 làn đường",
+      "Trời đổ mưa rào bất chợt",
+      "Ngập nước qua nửa bánh xe",
+      "Chở 4 người trên 1 chiếc Wave",
+      "Bán vé số đi giữa dòng xe",
+      "Áo mưa cánh dơi bay phần phật",
+      "Xe ba gác chở cây kiểng cồng kềnh",
+      "Cao thủ đi ngược chiều tỉnh bơ",
+      "Chú cún ngồi trước xe máy",
+      "Dừng đèn đỏ nép bóng râm cách 20m",
+      "Cảnh sát giao thông mồ hôi đẫm áo",
+      "Xe chết máy dắt bộ bở hơi tai",
+      "Hết xăng ngay giữa đỉnh cầu",
+      "Nghe tiếng chửi thề thân thương",
+      "Xe rác chắn ngang ngõ hẹp",
+      "Xe hơi bất thình lình mở cửa",
+      "Tiếng còi xe cứu thương í o",
+      "Ghé quán nước mía chờ bớt kẹt",
+      "Vừa lái xe vừa bấm điện thoại",
+      "Vệt dầu loang trơn trượt",
+      "Bụi mù mịt cay xè mắt",
+      "Thùng trà đá từ thiện ven đường",
+      "Xe hoa dạo phố chở cúc họa mi",
+      "Ổ gà ngập nước bất ngờ sụp hố",
+      "Áo chống nắng hoa nhí kín mít",
+      "Ly cà phê mang đi rơi vỡ giữa đường",
+      "Ổ bánh mì kẹp nách thơm phức",
+      "Xe tải bấm còi hơi giật thót tim",
+      "Tiếng rao bánh chưng bánh giò",
+      "Bị rớt dép kẹt chân chống",
+      "Bác bán sạc dự phòng, bút lau kính",
+      "Chờ tàu hỏa chạy ngang cắt đường",
+      "2 xe va quẹt đứng cãi tay đôi",
+      "Vượt đèn vàng lúc còn 0.5s",
+      "Khói xe phà thẳng vào mặt",
+      "Mất sóng GPS khi đang tìm đường",
+      "Xe chở thùng carton cao gấp đôi xe",
+      "Tiếng nhạc remix từ loa kẹo kéo",
+      "Quên gạt chân chống được người nhắc",
+      "Đeo tai nghe chống ồn vừa nhịp chân",
+      "Đứng hình 10 phút không nhích 1cm",
+      "Gặp người quen chạm mắt giữa dòng xe"
+    ];
+
+    let bingoBoard = []; // Array of 25 items
+    let stampedState = Array(25).fill(false);
+    let bingoTimerSeconds = 0;
+    let bingoTimerInterval = null;
+    let previousWinningLines = 0;
+
+    function initBingoBoard() {
+      const saved = localStorage.getItem('ket_xe_bingo_v1');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          bingoBoard = parsed.board;
+          stampedState = parsed.stamped;
+          bingoTimerSeconds = parsed.timer || 0;
+        } catch (e) {
+          generateFreshBoard();
+        }
+      } else {
+        generateFreshBoard();
+      }
+
+      // Ensure center is always free and stamped
+      stampedState[12] = true;
+      bingoBoard[12] = "FREE: Đang kẹt xe 😩";
+
+      renderBingoGrid();
+      startBingoTimer();
+      checkBingoWin(false);
+    }
+
+    function generateFreshBoard() {
+      // Pick 24 random items from scenarios
+      const shuffled = [...BINGO_SCENARIOS].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, 24);
+
+      bingoBoard = [];
+      let selIndex = 0;
+      for (let i = 0; i < 25; i++) {
+        if (i === 12) {
+          bingoBoard.push("FREE: Đang kẹt xe 😩");
+        } else {
+          bingoBoard.push(selected[selIndex++]);
+        }
+      }
+
+      stampedState = Array(25).fill(false);
+      stampedState[12] = true;
+      bingoTimerSeconds = 0;
+      previousWinningLines = 0;
+      saveBingoState();
+      renderBingoGrid();
+      checkBingoWin(false);
+    }
+
+    function generateNewBoardPrompt() {
+      playClickSound();
+      if (confirm("Bạn có muốn xáo trộn và tạo một Bảng Bingo kẹt xe mới không?")) {
+        generateFreshBoard();
+        showToast("Đã tạo bảng Bingo mới! Chúc bạn may mắn 🛵");
+      }
+    }
+
+    function saveBingoState() {
+      try {
+        localStorage.setItem('ket_xe_bingo_v1', JSON.stringify({
+          board: bingoBoard,
+          stamped: stampedState,
+          timer: bingoTimerSeconds
+        }));
+      } catch (e) {}
+    }
+
+    function startBingoTimer() {
+      if (bingoTimerInterval) clearInterval(bingoTimerInterval);
+      bingoTimerInterval = setInterval(() => {
+        bingoTimerSeconds++;
+        updateTimerDisplay();
+        if (bingoTimerSeconds % 10 === 0) saveBingoState();
+      }, 1000);
+      updateTimerDisplay();
+    }
+
+    function updateTimerDisplay() {
+      const h = String(Math.floor(bingoTimerSeconds / 3600)).padStart(2, '0');
+      const m = String(Math.floor((bingoTimerSeconds % 3600) / 60)).padStart(2, '0');
+      const s = String(bingoTimerSeconds % 60).padStart(2, '0');
+      const timerEl = document.getElementById('jam-timer');
+      if (timerEl) timerEl.textContent = `${h}:${m}:${s}`;
+    }
+
+    function renderBingoGrid() {
+      const container = document.getElementById('bingo-grid-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      bingoBoard.forEach((itemText, index) => {
+        const cell = document.createElement('div');
+        cell.className = 'bingo-cell';
+        if (index === 12) {
+          cell.classList.add('free-cell');
+        }
+        if (stampedState[index]) {
+          cell.classList.add('stamped');
+        }
+
+        cell.textContent = itemText;
+        cell.onclick = () => toggleCellStamp(index);
+        container.appendChild(cell);
+      });
+
+      updateStatsSummary();
+    }
+
+    function toggleCellStamp(index) {
+      if (index === 12) {
+        showToast("Ô FREE kẹt xe luôn được kích hoạt sẵn nhé! ☕");
+        return;
+      }
+
+      playStampSound();
+      if (navigator.vibrate) navigator.vibrate(25);
+
+      stampedState[index] = !stampedState[index];
+      saveBingoState();
+      renderBingoGrid();
+      checkBingoWin(true);
+    }
+
+    function checkBingoWin(triggerCelebrate = true) {
+      const lines = [
+        // 5 Rows
+        [0, 1, 2, 3, 4],
+        [5, 6, 7, 8, 9],
+        [10, 11, 12, 13, 14],
+        [15, 16, 17, 18, 19],
+        [20, 21, 22, 23, 24],
+        // 5 Cols
+        [0, 5, 10, 15, 20],
+        [1, 6, 11, 16, 21],
+        [2, 7, 12, 17, 22],
+        [3, 8, 13, 18, 23],
+        [4, 9, 14, 19, 24],
+        // 2 Diagonals
+        [0, 6, 12, 18, 24],
+        [4, 8, 12, 16, 20]
+      ];
+
+      const cells = document.querySelectorAll('.bingo-cell');
+      cells.forEach(c => c.classList.remove('in-line'));
+
+      let completedLines = 0;
+      const completedIndices = new Set();
+
+      lines.forEach(line => {
+        const isComplete = line.every(idx => stampedState[idx]);
+        if (isComplete) {
+          completedLines++;
+          line.forEach(idx => completedIndices.add(idx));
+        }
+      });
+
+      completedIndices.forEach(idx => {
+        if (cells[idx]) cells[idx].classList.add('in-line');
+      });
+
+      const linesCountEl = document.getElementById('bingo-lines-count');
+      if (linesCountEl) linesCountEl.textContent = completedLines;
+
+      const banner = document.getElementById('bingo-banner');
+      if (completedLines > 0) {
+        banner.classList.add('show');
+      } else {
+        banner.classList.remove('show');
+      }
+
+      // Check if newly hit a bingo
+      if (triggerCelebrate && completedLines > previousWinningLines) {
+        playBingoVictorySound();
+        fireConfettiEffect();
+        showToast(`🎉 BINGO! Bạn đã hoàn thành ${completedLines} đường kẹt xe!`);
+      }
+      previousWinningLines = completedLines;
+    }
+
+    function updateStatsSummary() {
+      const stampedCount = stampedState.filter(Boolean).length;
+      const countEl = document.getElementById('tiles-count');
+      if (countEl) countEl.textContent = `${stampedCount}/25`;
+    }
+
+    function fireConfettiEffect() {
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#FFFFFF']
+        });
+      }
+    }
+
+    function shareBingoResult() {
+      playClickSound();
+      const stampedCount = stampedState.filter(Boolean).length;
+      const lines = parseInt(document.getElementById('bingo-lines-count').textContent || '0', 10);
+      const timerStr = document.getElementById('jam-timer').textContent || '00:00:00';
+
+      // Build Wordle-like emoji grid
+      let gridEmojis = "";
+      for (let r = 0; r < 5; r++) {
+        let rowStr = "";
+        for (let c = 0; c < 5; c++) {
+          const idx = r * 5 + c;
+          if (idx === 12) {
+            rowStr += "⭐";
+          } else if (stampedState[idx]) {
+            rowStr += "🟩";
+          } else {
+            rowStr += "⬜";
+          }
+        }
+        gridEmojis += rowStr + "\n";
+      }
+
+      const shareText = `🚦 KẸT XE BINGO (GDG DevFest 2026)\n` +
+        `⏱️ Đã kẹt: ${timerStr} | 🎯 Đã phát hiện: ${stampedCount}/25 ô\n` +
+        `🏆 Kết quả: ${lines > 0 ? `Đạt ${lines} BINGO! 🎉` : 'Đang kiên nhẫn nhích từng mét...'}\n\n` +
+        `${gridEmojis}\n` +
+        `#KetXeBingo #GDGDevFest #SaiGonTraffic`;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareText).then(() => {
+          showToast("📋 Đã copy kết quả Bingo vào clipboard để khoe!");
+        }).catch(() => {
+          prompt("Copy kết quả bên dưới để khoe:", shareText);
+        });
+      } else {
+        prompt("Copy kết quả bên dưới để khoe:", shareText);
+      }
+    }
+
+    // =========================================================
+    // FEATURE 2: BẢN ĐỒ BÁO KẸT CỘNG ĐỒNG
+    // =========================================================
+    let map = null;
+    let mapMarkers = [];
+    let isGoogleMapsActive = false;
+    let googleMap = null;
+    let googleMarkers = [];
+    let selectedClickLatLng = null;
+    let selectedReportType = 'jam_heavy';
+    let firebaseDb = null;
+    let reportsData = [];
+
+    const REPORT_TYPE_CONFIG = {
+      jam_heavy: { label: 'Kẹt cứng', icon: '🔴', color: '#EF4444' },
+      jam_medium: { label: 'Đông đúc', icon: '🟡', color: '#F59E0B' },
+      flood: { label: 'Ngập nước', icon: '🌊', color: '#3B82F6' },
+      accident: { label: 'Tai nạn', icon: '⚠️', color: '#F97316' },
+      construction: { label: 'Công trình', icon: '🚧', color: '#EAB308' }
+    };
+
+    // 10 realistic sample hotspots in Ho Chi Minh City for demo mode
+    const DEMO_HOTSPOTS = [
+      {
+        id: 'demo-1',
+        type: 'jam_heavy',
+        title: 'Vòng xoay Lăng Cha Cả',
+        note: 'Hướng Cộng Hòa dồn về Hoàng Văn Thụ kẹt cứng không lối thoát',
+        lat: 10.7989,
+        lng: 106.6619,
+        upvotes: 24,
+        createdAt: Date.now() - 6 * 60 * 1000 // 6 mins ago
+      },
+      {
+        id: 'demo-2',
+        type: 'jam_heavy',
+        title: 'Ngã tư Hàng Xanh',
+        note: 'Dưới chân cầu Điện Biên Phủ xe máy chen lấn đứng bánh',
+        lat: 10.8016,
+        lng: 106.7115,
+        upvotes: 31,
+        createdAt: Date.now() - 12 * 60 * 1000 // 12 mins ago
+      },
+      {
+        id: 'demo-3',
+        type: 'jam_medium',
+        title: 'Cầu Sài Gòn',
+        note: 'Hướng từ Bình Thạnh sang TP Thủ Đức xe nhích chậm từng mét',
+        lat: 10.8000,
+        lng: 106.7225,
+        upvotes: 9,
+        createdAt: Date.now() - 18 * 60 * 1000
+      },
+      {
+        id: 'demo-4',
+        type: 'jam_heavy',
+        title: 'Ngã sáu Gò Vấp',
+        note: 'Giờ cao điểm xung đột giao thông, xe máy leo kín lề đường',
+        lat: 10.8268,
+        lng: 106.6787,
+        upvotes: 19,
+        createdAt: Date.now() - 8 * 60 * 1000
+      },
+      {
+        id: 'demo-5',
+        type: 'jam_heavy',
+        title: 'Cầu vượt Cộng Hòa - Hoàng Hoa Thám',
+        note: 'Dòng xe nối đuôi dài hơn 1km hướng về sân bay Tân Sơn Nhất',
+        lat: 10.8035,
+        lng: 106.6500,
+        upvotes: 42,
+        createdAt: Date.now() - 4 * 60 * 1000
+      },
+      {
+        id: 'demo-6',
+        type: 'flood',
+        title: 'Đường Nguyễn Hữu Cảnh',
+        note: 'Đoạn trũng chân cầu ngập sâu nửa bánh xe máy sau cơn mưa',
+        lat: 10.7915,
+        lng: 106.7120,
+        upvotes: 14,
+        createdAt: Date.now() - 25 * 60 * 1000
+      },
+      {
+        id: 'demo-7',
+        type: 'jam_medium',
+        title: 'Ngã tư Bảy Hiền',
+        note: 'Xe buýt và xe tải luân phiên nhích chậm',
+        lat: 10.7925,
+        lng: 106.6535,
+        upvotes: 7,
+        createdAt: Date.now() - 32 * 60 * 1000
+      },
+      {
+        id: 'demo-8',
+        type: 'accident',
+        title: 'Đường Nam Kỳ Khởi Nghĩa',
+        note: 'Va quẹt nhẹ giữa 2 xe máy gần chùa Vĩnh Nghiêm',
+        lat: 10.7890,
+        lng: 106.6850,
+        upvotes: 11,
+        createdAt: Date.now() - 15 * 60 * 1000
+      },
+      {
+        id: 'demo-9',
+        type: 'jam_heavy',
+        title: 'Cầu Kênh Tẻ',
+        note: 'Dòng người từ Quận 7 sang Quận 4 nghẽn đặc trên cầu',
+        lat: 10.7558,
+        lng: 106.6998,
+        upvotes: 27,
+        createdAt: Date.now() - 10 * 60 * 1000
+      },
+      {
+        id: 'demo-10',
+        type: 'construction',
+        title: 'Đường Tôn Đức Thắng',
+        note: 'Rào chắn sửa chữa cáp ngầm chiếm nửa làn ô tô',
+        lat: 10.7785,
+        lng: 106.7075,
+        upvotes: 5,
+        createdAt: Date.now() - 45 * 60 * 1000
+      }
+    ];
+
+    // Khởi tạo bản đồ: Tự động chuyển Google Maps nếu có GOOGLE_MAPS_API_KEY, nếu không dùng Leaflet
+    function initTrafficMap() {
+      if (map || googleMap) return;
+
+      if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY.trim() !== '') {
+        switchToGoogleMaps(GOOGLE_MAPS_API_KEY.trim());
+      } else {
+        initLeafletMap();
+      }
+    }
+
+    // Chuyển sang Google Maps JavaScript API
+    function switchToGoogleMaps(apiKey) {
+      if (window.google && window.google.maps) {
+        window.onGoogleMapsReady();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&callback=onGoogleMapsReady`;
+      script.async = true;
+      script.defer = true;
+      script.onerror = () => {
+        console.warn('Không tải được Google Maps JavaScript API, tự động chuyển về Leaflet.');
+        initLeafletMap();
+      };
+      document.head.appendChild(script);
+    }
+
+    window.onGoogleMapsReady = function() {
+      isGoogleMapsActive = true;
+      const mapContainer = document.getElementById('map-container');
+      if (!mapContainer) return;
+
+      googleMap = new google.maps.Map(mapContainer, {
+        center: { lat: 10.782, lng: 106.688 },
+        zoom: 13,
+        styles: [
+          { elementType: 'geometry', stylers: [{ color: '#131b28' }] },
+          { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+          { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#273852' }] },
+          { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#1c283a' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0b1019' }] }
+        ],
+        disableDefaultUI: false,
+        zoomControl: true
+      });
+
+      googleMap.addListener('click', function(e) {
+        playClickSound();
+        openReportModal(e.latLng.lat(), e.latLng.lng());
+      });
+
+      initDataBackend();
+    };
+
+    function initLeafletMap() {
+      if (map) return;
+      const defaultCenter = [10.782, 106.688]; // Saigon Center
+      map = L.map('map-container', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView(defaultCenter, 13);
+
+      // Dark theme map tiles (CartoDB Dark Matter)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+        errorTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+      }).addTo(map);
+
+      // Map tap / click event to report
+      map.on('click', function(e) {
+        playClickSound();
+        openReportModal(e.latlng.lat, e.latlng.lng);
+      });
+
+      initDataBackend();
+    }
+
+    function initDataBackend() {
+      // 1. Try Firebase if valid config provided
+      if (FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined') {
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(FIREBASE_CONFIG);
+          }
+          firebaseDb = firebase.firestore();
+          document.getElementById('live-status-text').textContent = 'Firebase Realtime';
+
+          // Listen realtime (last 60 mins)
+          const oneHourAgo = Date.now() - 60 * 60 * 1000;
+          firebaseDb.collection('reports')
+            .where('createdAt', '>', oneHourAgo)
+            .onSnapshot(snapshot => {
+              const list = [];
+              snapshot.forEach(doc => {
+                list.push({ id: doc.id, ...doc.data() });
+              });
+              reportsData = list;
+              renderMapReports();
+            }, err => {
+              console.warn('Firebase error, falling back to Local Demo Mode:', err);
+              setupLocalDemoReports();
+            });
+          return;
+        } catch (e) {
+          console.warn('Firebase init failed, switching to Local Demo Mode:', e);
+        }
+      }
+
+      // 2. Fallback to Local Demo Mode
+      setupLocalDemoReports();
+    }
+
+    function setupLocalDemoReports() {
+      document.getElementById('live-status-text').textContent = 'Demo Mode (Local)';
+      const saved = localStorage.getItem('traffic_reports_demo_v1');
+      if (saved) {
+        try {
+          reportsData = JSON.parse(saved);
+        } catch (e) {
+          reportsData = [...DEMO_HOTSPOTS];
+        }
+      } else {
+        reportsData = [...DEMO_HOTSPOTS];
+        saveLocalReports();
+      }
+      renderMapReports();
+    }
+
+    function saveLocalReports() {
+      try {
+        localStorage.setItem('traffic_reports_demo_v1', JSON.stringify(reportsData));
+      } catch (e) {}
+    }
+
+    function renderMapReports() {
+      const now = Date.now();
+      const validReports = reportsData.filter(r => (now - r.createdAt) < 60 * 60 * 1000);
+      validReports.sort((a, b) => b.createdAt - a.createdAt);
+
+      if (isGoogleMapsActive && googleMap && window.google) {
+        // Clear existing Google markers
+        googleMarkers.forEach(m => m.setMap(null));
+        googleMarkers = [];
+
+        validReports.forEach(report => {
+          const typeConf = REPORT_TYPE_CONFIG[report.type] || REPORT_TYPE_CONFIG.jam_heavy;
+          const minutesLeft = Math.max(1, Math.round((60 * 60 * 1000 - (now - report.createdAt)) / 60000));
+          const opacityRatio = Math.max(0.3, minutesLeft / 60);
+
+          const marker = new google.maps.Marker({
+            position: { lat: report.lat, lng: report.lng },
+            map: googleMap,
+            title: report.title,
+            opacity: opacityRatio
+          });
+
+          const popupHtml = `
+            <div style="font-family:'Be Vietnam Pro',sans-serif; color:#0f172a; padding:6px; min-width:180px;">
+              <div style="font-weight:800; font-size:13px; color:${typeConf.color}; margin-bottom:4px;">
+                ${typeConf.icon} ${typeConf.label} - Còn ${minutesLeft}p
+              </div>
+              <div style="font-weight:700; font-size:13px; margin-bottom:4px;">
+                ${escapeHtml(report.title || 'Điểm kẹt cộng đồng')}
+              </div>
+              ${report.note ? `<div style="font-size:12px; color:#475569; margin-bottom:6px;">"${escapeHtml(report.note)}"</div>` : ''}
+              <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #cbd5e1; padding-top:6px;">
+                <span style="font-size:11px; color:#64748b;">Xác nhận: ${report.upvotes || 0}</span>
+                <button onclick="upvoteReport('${report.id}')" style="background:#0f172a; color:#fff; border:none; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">👍 Vẫn kẹt</button>
+              </div>
+            </div>
+          `;
+
+          const infoWindow = new google.maps.InfoWindow({ content: popupHtml });
+          marker.addListener('click', () => infoWindow.open(googleMap, marker));
+          marker.reportId = report.id;
+          marker.infoWindow = infoWindow;
+          googleMarkers.push(marker);
+        });
+      } else if (map) {
+        // Clear existing Leaflet markers
+        mapMarkers.forEach(m => map.removeLayer(m));
+        mapMarkers = [];
+
+        validReports.forEach(report => {
+          const typeConf = REPORT_TYPE_CONFIG[report.type] || REPORT_TYPE_CONFIG.jam_heavy;
+          const minutesLeft = Math.max(1, Math.round((60 * 60 * 1000 - (now - report.createdAt)) / 60000));
+          const opacityRatio = Math.max(0.3, minutesLeft / 60);
+
+          const customIcon = L.divIcon({
+            className: 'custom-marker',
+            iconSize: [36, 36],
+            iconAnchor: [18, 18],
+            popupAnchor: [0, -18],
+            html: `
+              <div class="marker-ripple" style="background:${typeConf.color}; opacity:${opacityRatio * 0.4};"></div>
+              <div class="marker-pin" style="background:${typeConf.color}; opacity:${opacityRatio};">
+                ${typeConf.icon}
+              </div>
+            `
+          });
+
+          const marker = L.marker([report.lat, report.lng], { icon: customIcon }).addTo(map);
+
+          const popupHtml = `
+            <div style="min-width: 190px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 4px;">
+                <span class="type-badge ${report.type}">${typeConf.icon} ${typeConf.label}</span>
+                <span style="font-size:0.65rem; color:#94A3B8;">Còn ${minutesLeft} phút</span>
+              </div>
+              <div style="font-weight:700; font-size:0.85rem; color:#FFFFFF; margin-bottom: 3px;">
+                ${escapeHtml(report.title || 'Điểm kẹt cộng đồng')}
+              </div>
+              ${report.note ? `<div style="font-size:0.75rem; color:#CBD5E1; margin-bottom: 8px;">"${escapeHtml(report.note)}"</div>` : ''}
+              <div style="display:flex; align-items:center; justify-content:space-between; border-top: 1px solid #27354A; padding-top: 6px;">
+                <span style="font-size:0.68rem; color:#94A3B8;">Xác nhận: ${report.upvotes || 0}</span>
+                <button class="btn-upvote" onclick="upvoteReport('${report.id}')">👍 Vẫn kẹt</button>
+              </div>
+            </div>
+          `;
+
+          marker.bindPopup(popupHtml);
+          marker.reportId = report.id;
+          mapMarkers.push(marker);
+        });
+      }
+
+      renderRecentReportsList(validReports);
+      updateChartWithLiveReports();
+    }
+
+    function renderRecentReportsList(reports) {
+      const container = document.getElementById('reports-list-container');
+      const badge = document.getElementById('reports-count-badge');
+      if (badge) badge.textContent = reports.length;
+      if (!container) return;
+
+      if (reports.length === 0) {
+        container.innerHTML = `
+          <div style="text-align:center; padding:20px; font-size:0.8rem; color:var(--text-muted);">
+            Hiện chưa có báo cáo kẹt xe nào trong 60 phút qua. Hãy là người đầu tiên! 🚦
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = reports.map(r => {
+        const typeConf = REPORT_TYPE_CONFIG[r.type] || REPORT_TYPE_CONFIG.jam_heavy;
+        const minutesAgo = Math.max(1, Math.round((Date.now() - r.createdAt) / 60000));
+        return `
+          <div class="report-card" onclick="panToReportMarker(${r.lat}, ${r.lng}, '${r.id}')">
+            <div class="report-info">
+              <div class="report-badge-line">
+                <span class="type-badge ${r.type}">${typeConf.icon} ${typeConf.label}</span>
+                <span class="report-time-ago">${minutesAgo} phút trước</span>
+              </div>
+              <div class="report-title-text">${escapeHtml(r.title || 'Điểm kẹt đường phố')}</div>
+              ${r.note ? `<div class="report-note-text">${escapeHtml(r.note)}</div>` : ''}
+            </div>
+            <button class="btn-upvote" onclick="event.stopPropagation(); upvoteReport('${r.id}')">
+              👍 ${r.upvotes || 0}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function panToReportMarker(lat, lng, reportId) {
+      playClickSound();
+      if (isGoogleMapsActive && googleMap) {
+        googleMap.panTo({ lat, lng });
+        googleMap.setZoom(15);
+        const found = googleMarkers.find(m => m.reportId === reportId);
+        if (found && found.infoWindow) {
+          setTimeout(() => found.infoWindow.open(googleMap, found), 300);
+        }
+      } else if (map) {
+        map.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+        const foundMarker = mapMarkers.find(m => m.reportId === reportId);
+        if (foundMarker) {
+          setTimeout(() => foundMarker.openPopup(), 900);
+        }
+      }
+    }
+
+    function openReportModal(lat, lng) {
+      selectedClickLatLng = { lat, lng };
+      document.getElementById('modal-location-text').textContent =
+        `Vị trí: [${lat.toFixed(4)}, ${lng.toFixed(4)}] (Chạm vào bản đồ)`;
+      document.getElementById('report-note-input').value = '';
+      document.getElementById('report-modal').classList.add('open');
+    }
+
+    function openReportModalAtCenter() {
+      playClickSound();
+      if (isGoogleMapsActive && googleMap) {
+        const center = googleMap.getCenter();
+        openReportModal(center.lat(), center.lng());
+      } else if (map) {
+        const center = map.getCenter();
+        openReportModal(center.lat, center.lng);
+      } else {
+        openReportModal(10.782, 106.688);
+      }
+    }
+
+    function closeReportModal() {
+      document.getElementById('report-modal').classList.remove('open');
+    }
+
+    function selectReportType(el, type) {
+      playClickSound();
+      selectedReportType = type;
+      document.querySelectorAll('.type-radio-btn').forEach(btn => btn.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
+    function submitTrafficReport() {
+      if (!selectedClickLatLng) return;
+      playClickSound();
+
+      const note = document.getElementById('report-note-input').value.trim();
+      const typeConf = REPORT_TYPE_CONFIG[selectedReportType];
+
+      const newReport = {
+        type: selectedReportType,
+        title: `Điểm kẹt tại [${selectedClickLatLng.lat.toFixed(3)}, ${selectedClickLatLng.lng.toFixed(3)}]`,
+        note: note,
+        lat: selectedClickLatLng.lat,
+        lng: selectedClickLatLng.lng,
+        upvotes: 1,
+        createdAt: Date.now()
+      };
+
+      if (firebaseDb) {
+        firebaseDb.collection('reports').add(newReport)
+          .then(() => {
+            showToast("🚀 Đã gửi báo cáo kẹt xe lên mạng lưới cộng đồng!");
+            closeReportModal();
+          })
+          .catch(err => {
+            console.error('Firebase save failed, saving local:', err);
+            saveLocalAndRender(newReport);
+          });
+      } else {
+        newReport.id = 'local-' + Date.now();
+        saveLocalAndRender(newReport);
+      }
+    }
+
+    function saveLocalAndRender(newReport) {
+      reportsData.unshift(newReport);
+      saveLocalReports();
+      renderMapReports();
+      closeReportModal();
+      showToast("🚀 Đã gửi báo cáo kẹt xe thành công!");
+    }
+
+    function upvoteReport(reportId) {
+      playClickSound();
+      if (firebaseDb) {
+        try {
+          firebaseDb.collection('reports').doc(reportId).update({
+            upvotes: firebase.firestore.FieldValue.increment(1)
+          });
+          showToast("👍 Đã xác nhận tình trạng kẹt xe!");
+          return;
+        } catch (e) {}
+      }
+
+      // Local update
+      const report = reportsData.find(r => r.id === reportId);
+      if (report) {
+        report.upvotes = (report.upvotes || 0) + 1;
+        saveLocalReports();
+        renderMapReports();
+        showToast("👍 Đã xác nhận: Vẫn còn kẹt xe!");
+      }
+    }
+
+    // =========================================================
+    // FEATURE 3: GỢI Ý GIỜ ĐI THÔNG MINH
+    // =========================================================
+    let currentDayType = 'weekday'; // 'weekday' or 'weekend'
+
+    // Historical rush hour curves (Congestion % by 0-23 hour)
+    const TRAFFIC_PROFILES = {
+      weekday: [
+        5,  5,  5,  5,  8, 18, 55, 92, 85, 52, 40, 42,
+        46, 38, 35, 48, 70, 96, 90, 72, 48, 32, 20, 10
+      ],
+      weekend: [
+        5,  5,  5,  5,  6, 12, 25, 38, 50, 65, 75, 72,
+        60, 52, 50, 55, 65, 80, 85, 82, 70, 45, 25, 12
+      ]
+    };
+
+    const FUNNY_QUIPS = [
+      { range: [6, 8], text: "Đi tầm này thì chuẩn bị sẵn playlist podcast 2 tiếng và ổ bánh mì ăn sáng trên xe luôn nhé 🥖" },
+      { range: [7, 8], text: "Đi lúc 7h15 thì kịp ăn sáng trên xe luôn, nhích 1 mét cắn 1 miếng bánh mì 🥖" },
+      { range: [8, 9], text: "Giờ vàng của các võ sĩ leo vỉa hè. Nhớ giữ vững tay lái và tắt chuông báo thức đi làm trễ nhé ⏰" },
+      { range: [11, 13], text: "Đường nắng vỡ đầu nhưng tương đối thoáng, nhớ mặc áo giáp hoa nhí chống nắng kín mít 🥷" },
+      { range: [16, 18], text: "Giờ này ra đường thì được ngắm trọn hoàng hôn lãng mạn hòa cùng khói bụi xe buýt 🌇" },
+      { range: [17, 19], text: "Đi giờ này thì vừa tập thiền tịnh tâm vừa nhích từng centimet. Đừng manh động! 🧘" },
+      { range: [19, 21], text: "Bớt kẹt hơn một chút rồi, nhưng nhớ cẩn thận các bậc thầy rẽ không xi nhan nhé 🛵" },
+      { range: [21, 24], text: "Đường thoáng vi vu như bay, mát mẻ thênh thang nhưng cẩn thận gió lùa lạnh lưng 💨" },
+      { range: [0, 5], text: "Giờ này đường là của bạn, tha hồ phóng nhưng nhớ ngủ đủ giấc mai còn đi cày nhé 😴" }
+    ];
+
+    function switchDayType(type) {
+      playClickSound();
+      currentDayType = type;
+      document.getElementById('btn-day-weekday').classList.toggle('active', type === 'weekday');
+      document.getElementById('btn-day-weekend').classList.toggle('active', type === 'weekend');
+      renderCongestionChart();
+      calculateDepartureRecommendation();
+    }
+
+    function renderCongestionChart() {
+      const wrap = document.getElementById('chart-svg-wrap');
+      if (!wrap) return;
+
+      const profile = [...TRAFFIC_PROFILES[currentDayType]];
+      const currentHour = new Date().getHours();
+
+      // Factor in live community reports in past 1 hour
+      const liveReportCount = reportsData.filter(r => (Date.now() - r.createdAt) < 60 * 60 * 1000).length;
+      if (liveReportCount > 0) {
+        profile[currentHour] = Math.min(100, profile[currentHour] + Math.min(25, liveReportCount * 3));
+      }
+
+      const svgWidth = 600;
+      const svgHeight = 130;
+      const barWidth = 18;
+      const gap = (svgWidth - (barWidth * 24)) / 25;
+
+      let barsHtml = '';
+      for (let h = 0; h < 24; h++) {
+        const val = profile[h];
+        const barHeight = (val / 100) * 85;
+        const x = gap + h * (barWidth + gap);
+        const y = svgHeight - barHeight - 22;
+
+        let fillColor = '#10B981'; // Green
+        if (val >= 70) fillColor = '#EF4444'; // Red
+        else if (val >= 40) fillColor = '#F59E0B'; // Yellow
+
+        const isCurrent = h === currentHour;
+
+        barsHtml += `
+          <g class="chart-bar-group" style="cursor:pointer;" onclick="selectHourForCalc(${h})">
+            <!-- Background track -->
+            <rect x="${x}" y="15" width="${barWidth}" height="${svgHeight - 37}" fill="#172233" rx="4" />
+            <!-- Active congestion bar -->
+            <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${fillColor}" rx="4" />
+            ${isCurrent ? `
+              <!-- Indicator for current hour -->
+              <circle cx="${x + barWidth / 2}" cy="8" r="4" fill="#3B82F6" />
+              <rect x="${x - 1}" y="14" width="${barWidth + 2}" height="${svgHeight - 35}" fill="none" stroke="#3B82F6" stroke-width="1.5" rx="5" />
+            ` : ''}
+            <!-- Hour label -->
+            <text x="${x + barWidth / 2}" y="${svgHeight - 6}" font-size="9" fill="${isCurrent ? '#60A5FA' : '#94A3B8'}" font-weight="${isCurrent ? '800' : '600'}" text-anchor="middle" font-family="'Be Vietnam Pro', sans-serif">
+              ${h}h
+            </text>
+          </g>
+        `;
+      }
+
+      wrap.innerHTML = `
+        <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" height="100%" style="overflow: visible;">
+          ${barsHtml}
+        </svg>
+      `;
+    }
+
+    function selectHourForCalc(hour) {
+      playClickSound();
+      const timeInput = document.getElementById('target-arrival-time');
+      if (timeInput) {
+        timeInput.value = `${String(hour).padStart(2, '0')}:00`;
+        calculateDepartureRecommendation();
+        showToast(`Đã chọn mốc đến lúc ${hour}:00`);
+      }
+    }
+
+    function updateChartWithLiveReports() {
+      renderCongestionChart();
+    }
+
+    function calculateDepartureRecommendation() {
+      const timeVal = document.getElementById('target-arrival-time').value || "08:00";
+      const distance = document.getElementById('trip-distance').value || "medium";
+      const [arrHour, arrMin] = timeVal.split(':').map(Number);
+
+      const profile = TRAFFIC_PROFILES[currentDayType];
+      const congestionLevel = profile[arrHour] || 50;
+
+      // Base travel duration by distance in free-flow conditions (minutes)
+      let baseMinutes = 15;
+      if (distance === 'medium') baseMinutes = 25;
+      if (distance === 'long') baseMinutes = 45;
+
+      // Inflation multiplier based on traffic jam %
+      // 0% -> 1.0x, 50% -> 1.5x, 90% -> 2.4x
+      const jamMultiplier = 1.0 + (congestionLevel / 100) * 1.5;
+      const estimatedMinutes = Math.round(baseMinutes * jamMultiplier);
+
+      // Buffer recommendation (minutes to depart earlier)
+      const bufferMinutes = estimatedMinutes - baseMinutes;
+
+      // Departure time calculation
+      const targetDate = new Date();
+      targetDate.setHours(arrHour, arrMin, 0, 0);
+
+      const departDate = new Date(targetDate.getTime() - estimatedMinutes * 60000);
+      const departHourStr = String(departDate.getHours()).padStart(2, '0');
+      const departMinStr = String(departDate.getMinutes()).padStart(2, '0');
+
+      // Risk status
+      let riskClass = 'green';
+      let riskText = '🟢 Đường thông thoáng';
+      if (congestionLevel >= 70) {
+        riskClass = 'red';
+        riskText = '🔴 Kẹt xe nghẹt thở';
+      } else if (congestionLevel >= 40) {
+        riskClass = 'yellow';
+        riskText = '🟡 Khá đông đúc';
+      }
+
+      // Find matching funny quip
+      let matchedQuip = FUNNY_QUIPS.find(q => arrHour >= q.range[0] && arrHour <= q.range[1]);
+      if (!matchedQuip) {
+        matchedQuip = { text: "Mang theo tinh thần lạc quan và kiên định, đường Sài Gòn kẹt nhưng không bỏ rơi ai! 🛵" };
+      }
+
+      // Alternative suggestion
+      let alternativeText = "";
+      if (congestionLevel >= 70) {
+        const betterHour = (arrHour + 1) % 24;
+        alternativeText = `💡 <b>Mẹo né kẹt:</b> Nếu có thể dời giờ đến sang <b>${betterHour}:15</b>, bạn chỉ mất ~${baseMinutes + 8} phút di chuyển (tiết kiệm hơn ${Math.round(bufferMinutes * 0.7)} phút kẹt xe!).`;
+      } else {
+        alternativeText = `✨ Khung giờ này khá dễ thở, xuất phát đúng giờ là đến nơi thong thả uống cà phê!`;
+      }
+
+      const resultBox = document.getElementById('departure-result-box');
+      if (!resultBox) return;
+
+      resultBox.innerHTML = `
+        <div class="result-primary-line">
+          <div>
+            <div style="font-size:0.7rem; color:var(--text-muted); font-weight:700;">NÊN XUẤT PHÁT LÚC</div>
+            <div class="result-depart-time">${departHourStr}:${departMinStr}</div>
+          </div>
+          <span class="risk-badge ${riskClass}">${riskText}</span>
+        </div>
+
+        <div class="result-quip">
+          "${matchedQuip.text}"
+        </div>
+
+        <div class="result-metrics">
+          <div class="metric-item">
+            <span class="metric-label">Thời gian đi</span>
+            <span class="metric-val">${estimatedMinutes} phút</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Đi sớm hơn</span>
+            <span class="metric-val" style="color:var(--yellow);">${bufferMinutes > 0 ? `+${bufferMinutes}p` : '0p'}</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Mức độ kẹt</span>
+            <span class="metric-val" style="color:${congestionLevel >= 70 ? 'var(--red)' : congestionLevel >= 40 ? 'var(--yellow)' : 'var(--green)'};">${congestionLevel}%</span>
+          </div>
+        </div>
+
+        <div style="font-size:0.75rem; color:#CBD5E1; line-height:1.4; border-top:1px dashed #27354A; padding-top:8px;">
+          ${alternativeText}
+        </div>
+      `;
+    }
+
+    // =========================================================
+    // UI NAVIGATION & INTERACTION
+    // =========================================================
+    function switchTab(tabId) {
+      playClickSound();
+
+      // Update Nav buttons
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      const activeNav = document.getElementById(`nav-btn-${tabId}`);
+      if (activeNav) activeNav.classList.add('active');
+
+      // Update Tab views
+      document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+      const activeTab = document.getElementById(`tab-${tabId}`);
+      if (activeTab) activeTab.classList.add('active');
+
+      // Map tab requires Leaflet/Google Maps invalidation when shown
+      if (tabId === 'map') {
+        setTimeout(() => {
+          initTrafficMap();
+          if (isGoogleMapsActive && googleMap && window.google) {
+            google.maps.event.trigger(googleMap, 'resize');
+          } else if (map) {
+            map.invalidateSize();
+          }
+        }, 80);
+      } else if (tabId === 'timing') {
+        renderCongestionChart();
+        calculateDepartureRecommendation();
+      }
+    }
+
+    // Animated Traffic Light in header
+    let currentLightIndex = 0;
+    const lights = ['light-red', 'light-yellow', 'light-green'];
+    setInterval(() => {
+      lights.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active');
+      });
+      currentLightIndex = (currentLightIndex + 1) % lights.length;
+      const nextLight = document.getElementById(lights[currentLightIndex]);
+      if (nextLight) nextLight.classList.add('active');
+    }, 2800);
+
+    // Toast Notification Utility
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = 'toast-pill';
+      toast.innerHTML = `<span>🚦</span> <span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-10px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // =========================================================
+    // INITIALIZATION ON LOAD
+    // =========================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      initBingoBoard();
+      renderCongestionChart();
+      calculateDepartureRecommendation();
+
+      // Preload map quietly in background so it's instantaneous when user taps Map
+      setTimeout(() => {
+        initTrafficMap();
+      }, 500);
+    });
+  </script>
+</body>
+</html>
